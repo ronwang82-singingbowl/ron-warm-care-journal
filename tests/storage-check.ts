@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {initializeApp,deleteApp} from 'firebase/app';
+import {connectFirestoreEmulator,getFirestore,terminate} from 'firebase/firestore';
+import {createJournalStore} from '../src/lib/storage';
+import {emptyJournal,newPerson,newRecord} from '../src/lib/journal';
+const app=initializeApp({projectId:'demo-care-journal',apiKey:'demo',appId:'demo'},'storage-test');
+const db=getFirestore(app);
+connectFirestoreEmulator(db,'127.0.0.1',8789,{mockUserToken:{sub:'sdk-owner',email:'ronwang82@gmail.com',email_verified:true,firebase:{sign_in_provider:'google.com',identities:{}}}});
+try{
+ const store=createJournalStore(db,'sdk-owner');
+ assert.equal((await store.read()).version,0);
+ const person={...newPerson(),name:'測試夥伴'};
+ const journal={...emptyJournal,people:[person],records:[{...newRecord(person.id),facts:'測試陪伴紀錄'}]};
+ assert.equal((await store.save(journal,0)).version,1);
+ const first=await store.read();assert.deepEqual(first.data,journal);assert.ok(first.updatedAt);
+ await assert.rejects(()=>store.save(journal,0),/另一個分頁/);
+ const results=await Promise.allSettled([store.save(journal,1),store.save(journal,1)]);
+ assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+ assert.equal(results.filter(r=>r.status==='rejected').length,1);
+ assert.equal((await store.read()).version,2);
+ await assert.rejects(()=>store.save({...journal,people:[{...person,name:''}]},2));
+ const big={...journal,records:Array.from({length:30},(_,i)=>({...newRecord(person.id),id:'large-'+i,facts:'字'.repeat(10000)}))};
+ await assert.rejects(()=>store.save(big,2),/容量上限/);
+ assert.equal((await store.read()).version,2);
+ const archived={...journal,people:[{...person,archived:true}]};
+ assert.equal((await store.save(archived,2)).version,3);
+ assert.equal((await store.read()).data.people[0].archived,true);
+ await assert.rejects(()=>createJournalStore(db,'another-owner').read());
+ console.log('Storage SDK tests passed: round-trip, server timestamp, stale version, concurrent saves, validation, capacity, archive, cross-owner denial.');
+}finally{await terminate(db);await deleteApp(app);}

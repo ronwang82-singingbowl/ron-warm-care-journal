@@ -1,0 +1,19 @@
+import {z} from 'zod';
+const id=z.string().min(1).max(80),short=z.string().max(300),note=z.string().max(12000),tags=z.array(z.string().max(80)).max(30);
+const date=z.string().refine(v=>v===''||(/^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v));
+export const personSchema=z.object({id,name:z.string().trim().min(1).max(80),relation:short,role:short,group:short,supported:short,tags,note,archived:z.boolean()});
+export const recordSchema=z.object({id,personId:id,date,channel:short,topics:tags,feelings:tags,needs:tags,facts:note,reply:note,reflection:note,nextStep:note,due:date,status:z.enum(['待關心','已完成','暫留空間']),checks:tags,growth:z.array(note).length(3),change:note,ownState:short,courseProgress:note});
+// Retain the legacy practice format so existing records and backups remain intact.
+export const practiceSchema=z.object({id,personId:z.string().max(80),date,mode:short,context:note,theirs:note,mine:note,feedback:note,retry:note,takeaway:note});
+export const journalSchema=z.object({people:z.array(personSchema).max(300),records:z.array(recordSchema).max(2000),practices:z.array(practiceSchema).max(1000)}).superRefine((d,c)=>{const ids=new Set(d.people.map(p=>p.id));for(const a of [d.people,d.records,d.practices])if(new Set(a.map(x=>x.id)).size!==a.length)c.addIssue({code:'custom',message:'編號重複'});if(d.records.some(r=>!ids.has(r.personId))||d.practices.some(p=>p.personId&&!ids.has(p.personId)))c.addIssue({code:'custom',message:'缺少對應的關懷對象'});});
+export type Person=z.infer<typeof personSchema>;export type CareRecord=z.infer<typeof recordSchema>;export type Practice=z.infer<typeof practiceSchema>;export type Journal=z.infer<typeof journalSchema>;
+export const emptyJournal:Journal={people:[],records:[],practices:[]};
+export function today(){const parts=new Intl.DateTimeFormat('en',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=(t:string)=>parts.find(p=>p.type===t)?.value;return `${get('year')}-${get('month')}-${get('day')}`;}
+export const topics=['生活近況','工作與方向','人際與關係','身體與休息','情緒與壓力','課程與學習','陪伴卡關','值得開心的事','需要協助','單純聊聊'];
+export const feelings=['平穩','開心','期待','疲憊','緊繃','困惑','失落','有些擔心','感到被支持','尚不清楚'];
+export const needs=['想被聽見','想有人陪','想一起想辦法','需要具體協助','需要休息','想先留點空間','還不確定'];
+export const checks=['先聽他的想法，再提供建議','先理解他卡在哪裡','有提供示範、練習或協助','下一步由他參與決定','跟進自己答應的支持','留意自己的狀態與界線'];
+export const growthLabels=['事情有跟上','困難說得出來','判斷逐漸成熟'];
+export const newPerson=():Person=>({id:crypto.randomUUID(),name:'',relation:'活動朋友',role:'小天使',group:'',supported:'',tags:[],note:'',archived:false});
+export const newRecord=(personId=''):CareRecord=>({id:crypto.randomUUID(),personId,date:today(),channel:'LINE 訊息',topics:[],feelings:[],needs:[],facts:'',reply:'',reflection:'',nextStep:'',due:'',status:'待關心',checks:[],growth:['','',''],change:'',ownState:'',courseProgress:''});
+export function demoJournal():Journal{const a={...newPerson(),id:'demo-a',name:'小禾',tags:['旅行','攝影'],note:'虛構示範人物。最近在計畫旅行。'},b={...newPerson(),id:'demo-b',name:'阿澄',role:'活動朋友',tags:['工作轉換'],note:'虛構示範人物。上次提到這週比較忙。'},c={...newPerson(),id:'demo-c',name:'沐沐',group:'秋季共學',supported:'小舟（示範）',tags:['陪伴練習'],note:'虛構示範人物。想把問題問得更具體。'};return {people:[a,b,c],records:[{...newRecord(a.id),id:'demo-r1',facts:'他說：「最近每天好像都差不多。」後來聊到正在計畫旅行。',reply:'聽到你開始安排旅行，覺得滿期待的耶！',topics:['生活近況','值得開心的事'],feelings:['尚不清楚'],nextStep:'接回他主動分享的旅行，問問準備得怎麼樣',due:today(),checks:[checks[0],checks[3]]},{...newRecord(c.id),id:'demo-r2',facts:'她說：「有時候不知道他是不想聊，還是我問得太大。」',topics:['陪伴卡關'],reply:'你願意跟我說說，當時問了哪一句嗎？',nextStep:'一起把大問題改成容易回答的小問題',due:today(),checks:[checks[0],checks[1]]},{...newRecord(b.id),id:'demo-r3',facts:'他說這週忙，想等有空再聊。',reply:'好呀，你先忙，有空我們再聊。',status:'暫留空間',topics:['工作與方向'],checks:[checks[5]]}],practices:[]};}

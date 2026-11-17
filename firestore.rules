@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // journals/{Firebase UID}: content(JSON string), version(int), updatedAt(timestamp)
+    // Ownership is fixed by the document ID. All fields are required.
+    function isOwner(userId) {
+      return request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email == 'ronwang82@gmail.com'
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    function isValidJournal() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['content', 'version', 'updatedAt'])
+        && data.keys().hasOnly(['content', 'version', 'updatedAt'])
+        && data.content is string
+        && data.content.size() > 0
+        && data.content.size() <= 200000
+        && data.version is int
+        && data.version >= 1
+        && data.version <= 2147483647
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    match /journals/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidJournal()
+        && request.resource.data.version == 1;
+      allow update: if isOwner(userId) && isValidJournal()
+        && request.resource.data.version == resource.data.version + 1;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
